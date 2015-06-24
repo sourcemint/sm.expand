@@ -1,0 +1,16 @@
+{
+	"uid": "github.com~sourcemint~sm.expand~0",
+	"name": "sm.expand",
+	"version": "0.1.0",
+	"main": "sm.expand",
+	"dependencies": {
+		"sm.resolve": "0.1.x"
+	},
+	"devDependencies": {
+		"bash.origin": "0.1.x",
+		"mocha": "^2.2.5"
+	},
+	"scripts": {
+		"test": "./tests/test"
+	}
+}

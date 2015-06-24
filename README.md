@@ -1,1 +1,49 @@
-# sm.expand
+**Status: DEV**
+
+sm.expand
+=========
+
+Install *Source Logic* from the *Semantic Web* to the local *Context*.
+
+
+API
+===
+
+	./sm.expand
+
+
+Use Cases
+=========
+
+NodeJS
+------
+
+Given `/package.json`:
+
+````
+{
+	"@github.com~sourcemint~sm.expand~0/map": {
+		"sources": {
+			"<uid>": {
+				"<rev>": "git@github.com:sourcemint/sm.expand.git"
+			}
+		},
+		"mappings": {
+			"<alias>": "<uid>/{rev}"
+		},
+		"@github.com~sourcemint~sm.expand~0/locations": {
+			"sources": ".deps/{uid}/source/installed/{rev}",
+			"mappings": "node_modules/{alias}"
+		}
+	}
+}
+````
+
+And running from *CWD: /*:
+
+	./sm.expand
+
+Will yield:
+
+  * Installed source at `/.deps/<uid>/source/installed/{rev}`
+  * Symlink at `/node_modules/<alias>`, linked to `/.deps/<uid>/source/installed/{rev}`

@@ -1,0 +1,56 @@
+#!/usr/bin/env node
+
+const PATH = require("path");
+const FS = require("fs");
+
+
+function formatLogArgs (args) {
+	var allStrings = true;
+	args.forEach(function (arg) {
+		if (!allStrings) return;
+		if (typeof arg !== "string") {
+			allStrings = false;
+		}
+	});
+	if (allStrings) {
+		return args.join(" ");
+	}
+	return (args.length > 1 ? args : args[0]);
+}
+
+function log () {
+	if (!process.env.VERBOSE) return;
+	var args = Array.prototype.slice.call(arguments);
+	console.log.call(console, "[sm.resolve]", formatLogArgs(args));
+}
+
+exports.for = function (module) {
+
+	log("CODEBASE", __dirname);
+	log("Using BO_GLOBAL_SYSTEM_CACHE_DIR:", process.env.BO_GLOBAL_SYSTEM_CACHE_DIR);
+
+	var origin = process.cwd();
+
+
+console.log("ORIGIN", origin);
+
+
+	return {
+		expanded: true
+	};
+}
+
+
+if (require.main === module) {
+
+	var info = exports.for({
+		filename: process.cwd()
+	})(process.argv[2], process.argv[3]);
+
+	if (info.expanded) {
+		process.exit(0);
+	} else {
+		process.exit(1);
+	}
+}
+

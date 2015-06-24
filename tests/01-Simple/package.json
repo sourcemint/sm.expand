@@ -1,0 +1,16 @@
+{
+	"@github.com~sourcemint~sm.expand~0/map": {
+		"sources": {
+			"github.com~sourcemint~sm.expand~0": {
+				"master": "git@github.com:sourcemint/sm.expand.git"
+			}
+		},
+		"mappings": {
+			"sm.expand": "github.com~sourcemint~sm.expand~0/master"
+		},
+		"@github.com~sourcemint~sm.expand~0/locations": {
+			"sources": ".deps/{uid}/source/installed/{rev}",
+			"mappings": "node_modules/{alias}"
+		}
+	}
+}
