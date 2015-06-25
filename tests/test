@@ -9,6 +9,11 @@ function init {
 
 	function runJSTests {
 		pushd "$__BO_DIR__/.." > /dev/null
+			if [ ! -e "node_modules/.bin/mocha" ]; then
+				BO_run_npm install
+			fi
+			export Q_DEBUG=1
+			export VERBOSE=1
 			"node_modules/.bin/mocha" --reporter list tests/test.js
 		popd > /dev/null
 	}

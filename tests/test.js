@@ -46,18 +46,20 @@ function runCommands (rootPath, commands, callback) {
 
 describe('sm.expand', function() {
 
-	describe('01-Simple', function() {
+	this.timeout(30 * 1000);
+
+	describe('01-MastersFromGithub', function() {
 
 		var smExpandPath = PATH.join(__dirname, "../sm.expand");
-		var basePath = PATH.join(__dirname, "01-Simple");
-
+		var basePath = PATH.join(__dirname, "01-MastersFromGithub");
+/*
 		it("prepare", function (callback) {
 			return runCommands(basePath, [
 				"rm -Rf .deps > /dev/null",
 				"rm -Rf node_modules > /dev/null",
 			], callback);
 	    });
-
+*/
 		it("run", function (callback) {
 			return runCommands(basePath, [
 				smExpandPath + " -vd"

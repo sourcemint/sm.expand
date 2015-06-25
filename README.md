@@ -31,7 +31,10 @@ Given `/package.json`:
 	"@github.com~sourcemint~sm.expand~0/map": {
 		"sources": {
 			"<uid>": {
-				"<rev>": "git@github.com:sourcemint/sm.expand.git"
+				"<rev>": {
+					"url": "git://git@github.com:sourcemint/sm.expand.git",
+					"installer": "npm"
+				}
 			}
 		},
 		"mappings": {
