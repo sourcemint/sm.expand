@@ -8,8 +8,8 @@ function init {
 
 
 	function runJSTests {
-		pushd "$__BO_DIR__" > /dev/null
-			"$__BO_DIR__/node_modules/.bin/mocha" --reporter list tests/test.js
+		pushd "$__BO_DIR__/.." > /dev/null
+			"node_modules/.bin/mocha" --reporter list tests/test.js
 		popd > /dev/null
 	}
 

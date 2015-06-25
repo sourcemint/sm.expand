@@ -2,6 +2,7 @@
 
 const PATH = require("path");
 const FS = require("fs");
+const Q = require("q");
 
 
 function formatLogArgs (args) {
@@ -31,26 +32,30 @@ exports.for = function (module) {
 
 	var origin = process.cwd();
 
+	var expand = function () {
 
-console.log("ORIGIN", origin);
+console.log("EXPAND ORIGIN", origin);
 
 
-	return {
-		expanded: true
-	};
+		return Q.resolve({
+			expanded: true
+		});
+	}
+
+	return expand;
 }
 
 
 if (require.main === module) {
 
-	var info = exports.for({
+	Q.when(exports.for({
 		filename: process.cwd()
-	})(process.argv[2], process.argv[3]);
+	})()).then(function (info) {
 
-	if (info.expanded) {
-		process.exit(0);
-	} else {
-		process.exit(1);
-	}
+		if (info.expanded) {
+			process.exit(0);
+		} else {
+			process.exit(1);
+		}
+	});
 }
-

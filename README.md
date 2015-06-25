@@ -12,6 +12,12 @@ API
 	./sm.expand
 
 
+Uses installers to setup sources:
+
+  * [smi-for-npm](https://github.com/sourcemint/smi-for-npm)
+  * [smi-for-git](https://github.com/sourcemint/smi-for-git)
+
+
 Use Cases
 =========
 
