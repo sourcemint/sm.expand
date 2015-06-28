@@ -25,6 +25,22 @@ exports.for = function (API) {
 		console.log.call(console, "[sm.expand]", formatLogArgs(args));
 	}
 
+	function findPackageRoot (path) {
+		path = path.replace(/\/package\.json$/, "");
+		return API.QIO.exists(
+			API.PATH.join(path, "package.json")
+		).then(function (exists) {
+			if (exists) {
+				return path;
+			}
+			var newPath = API.PATH.dirname(path);
+			if (newPath === path) {
+				throw new Error("No package.json found in parent tree!");
+			}
+			return findPackageRoot(newPath);
+		});
+	}
+
 	function archiveFailed (targetPath) {
 		return API.QFS.exists(targetPath).then(function (exists) {
 			if (!exists) return;
@@ -437,41 +453,44 @@ console.log("unresolved", name, "for", plugin);
 
 		var expand = function () {
 
-			return API.CONFIG("file://" + origin + "/package.json").then(function (config) {
+			return findPackageRoot(module.filename).then(function (packageBasePath) {
 
-				var map = config.descriptor.at("github.com~sourcemint~sm.expand~0/map");
-				var locations = map.at("github.com~sourcemint~sm.expand~0/locations");
+				return API.CONFIG("file://" + packageBasePath + "/package.json").then(function (config) {
 
-				return ensureSources(
-					map.sources,
-					API.PATH.join(origin, locations.sources)
-				).then(function (sourcePaths) {
+					var map = config.descriptor.at("github.com~sourcemint~sm.expand~0/map");
+					var locations = map.at("github.com~sourcemint~sm.expand~0/locations");
 
-					return ensureMappings(
-						map.mappings,
-						sourcePaths,
-						API.PATH.join(origin, locations.mappings)
-					).then(function (mappingsInfo) {
+					return ensureSources(
+						map.sources,
+						API.PATH.join(origin, locations.sources)
+					).then(function (sourcePaths) {
 
-						return linkSourceDependencies(
+						return ensureMappings(
+							map.mappings,
 							sourcePaths,
-							mappingsInfo.paths
-						).then(function () {
+							API.PATH.join(origin, locations.mappings)
+						).then(function (mappingsInfo) {
 
-							return ensureInstalled(
-								map.sources,
+							return linkSourceDependencies(
 								sourcePaths,
-								map.mappings,
-								mappingsInfo.aliases
-							);
+								mappingsInfo.paths
+							).then(function () {
+
+								return ensureInstalled(
+									map.sources,
+									sourcePaths,
+									map.mappings,
+									mappingsInfo.aliases
+								);
+							});
 						});
 					});
-				});
 
-			}).then(function () {
-				return {
-					expanded: true
-				};
+				}).then(function () {
+					return {
+						expanded: true
+					};
+				});
 			});
 		}
 		return expand;
@@ -510,7 +529,7 @@ if (require.main === module) {
 	var api = exports.for(API);
 
 	API.Q.when(api.for({
-		filename: API.env.CWD
+		filename: process.argv[2]
 	})()).then(function (info) {
 		if (info.expanded) {
 			process.exit(0);
