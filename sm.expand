@@ -59,7 +59,25 @@ exports.for = function (API) {
 		});
 	}
 
-	function ensureSources (sources, targetPathPattern) {
+	function resolveSourcesInRegistries (sources) {
+		var shared = {};
+		return API.Q.all(Object.keys(sources).map(function (uid) {
+
+			var path = API.RESOLVE(uid, "", {
+				scope: API.RESOLVE.SCOPE.SYSTEMS
+			}).toPath();
+
+			if (path) {
+				shared[uid] = path;
+			}
+
+			return API.Q.resolve();
+		})).then(function () {
+			return shared;
+		});
+	}
+
+	function ensureSources (sources, targetPathPattern, sharedSources) {
 		var paths = {};
 		return API.Q.all(Object.keys(sources).map(function (uid) {
 			return API.Q.all(Object.keys(sources[uid]).map(function (rev) {
@@ -69,6 +87,15 @@ exports.for = function (API) {
 					.replace(/\{rev\}/g, rev);
 
 				paths[uid + "/" + rev] = targetPath;
+
+				function isSourceInRegistry () {
+					return API.Q.fcall(function () {
+						if (sharedSources[uid] !== targetPath) {
+							return sharedSources[uid];
+						}
+						return false;
+					});
+				}
 
 				function markSourceEnsured () {
 					return API.QFS.write(
@@ -150,32 +177,37 @@ exports.for = function (API) {
 					});
 				}
 
-				return isSourceEnsured().then(function (ensured) {
-					if (ensured) {
-						log(uid, rev, "already sourced");
-						return;
-					}
-					log("Ensuring source for", uid, rev);
-					return ensureEmpty().then(function () {
-						return ensureBase().then(function () {
+				return isSourceInRegistry().then(function (registryPath) {
 
-							return API.GIT_CLONE(
-								sources[uid][rev].uri,
-								targetPath
-							).then(function () {
+console.log("registryPath", registryPath);
 
-								return markSourceEnsured().then(function () {
+					return isSourceEnsured().then(function (ensured) {
+						if (ensured) {
+							log(uid, rev, "already sourced");
+							return;
+						}
+						log("Ensuring source for", uid, rev);
+						return ensureEmpty().then(function () {
+							return ensureBase().then(function () {
 
-									log("Source ensured for", uid, rev);
+								return API.GIT_CLONE(
+									sources[uid][rev].uri,
+									targetPath
+								).then(function () {
 
-								});
+									return markSourceEnsured().then(function () {
 
-							}, function (err) {
-								return archiveFailed(targetPath).then(function () {
-									throw err;
-								}, function (e) {
-									console.error("Error archiving failed but ignoring", e.stack);
-									throw err;
+										log("Source ensured for", uid, rev);
+
+									});
+
+								}, function (err) {
+									return archiveFailed(targetPath).then(function () {
+										throw err;
+									}, function (e) {
+										console.error("Error archiving failed but ignoring", e.stack);
+										throw err;
+									});
 								});
 							});
 						});
@@ -540,6 +572,39 @@ console.log("unresolved", name, "for", plugin);
 		});
 	}
 
+	function linkForRegistries (sourcePaths, registryPathPatterns) {
+		return API.Q.fcall(function () {
+			if (!registryPathPatterns) return;
+
+			return API.Q.all(Object.keys(sourcePaths).map(function (pointer) {
+				var pointerParts = pointer.split("/");
+
+				var targetPath = registryPathPatterns
+					.replace(/\{uid\}/g, pointerParts[0]);
+
+				var sourcePath = sourcePaths[pointer];
+
+				function ensureLinked () {
+					// Remove dead symlinks
+					// TODO: Only do this if symlink creation fails.
+					try {
+						API.FS.removeSync(targetPath);
+					} catch (err) {}
+
+					log("Linking", sourcePath, "to", targetPath);
+					return API.QFS.symbolicLink(targetPath, sourcePath, "directory");
+				}
+				
+				return API.QFS.exists(targetPath).then(function (exists) {
+					if (exists) {
+						return;
+					}
+					return ensureLinked();
+				});
+			}));
+		});
+	}
+
 	exports.for = function (module) {
 
 		log("CODEBASE", __dirname);
@@ -562,30 +627,42 @@ console.log("unresolved", name, "for", plugin);
 						];
 					}
 
-					return ensureSources(
-						map.sources,
-						API.PATH.join(origin, locations.sources)
-					).then(function (sourcePaths) {
+					return resolveSourcesInRegistries(
+						map.sources
+					).then(function (sharedSources) {
 
-						return ensureMappings(
-							map.mappings,
-							sourcePaths,
-							API.PATH.join(origin, locations.mappings)
-						).then(function (mappingsInfo) {
+						return ensureSources(
+							map.sources,
+							API.PATH.join(origin, locations.sources),
+							sharedSources
+						).then(function (sourcePaths) {
 
-							return linkSourceDependencies(
+							return ensureMappings(
+								map.mappings,
 								sourcePaths,
-								mappingsInfo.paths,
-								locations.binaries.map(function (path) {
-									return API.PATH.join(origin, path);
-								})
-							).then(function () {
+								API.PATH.join(origin, locations.mappings)
+							).then(function (mappingsInfo) {
 
-								return ensureInstalled(
-									map.sources,
+								return linkSourceDependencies(
 									sourcePaths,
-									map.mappings,
-									mappingsInfo.aliases
+									mappingsInfo.paths,
+									locations.binaries.map(function (path) {
+										return API.PATH.join(origin, path);
+									})
+								).then(function () {
+
+									return ensureInstalled(
+										map.sources,
+										sourcePaths,
+										map.mappings,
+										mappingsInfo.aliases
+									);
+								});
+							}).then(function () {
+
+								return linkForRegistries(
+									sourcePaths,
+									locations.registries
 								);
 							});
 						});
@@ -625,6 +702,7 @@ if (require.main === module) {
 
 	API.EXTEND(false, API, {
 		CONFIG: require("pinf.logic-for-json").for(API),
+		RESOLVE: require("sm.resolve").for(module),
 		GIT_CLONE: require("smi-for-git/api/clone-to").for(API).PLFunction,
 		NPM_LINK_DEPS: require("smi-for-npm/api/link-dependencies").for(API).PLFunction,
 		NPM_GET_DEPS: require("smi-for-npm/api/get-dependencies").for(API).PLFunction,
