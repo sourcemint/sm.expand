@@ -307,7 +307,11 @@ exports.for = function (API) {
 						            	mappingsAliases[id]
 						            ],
 						            consumes: (
-					            		(dependencies.required && Object.keys(dependencies.required)) ||
+					            		(
+					            			dependencies &&
+					            			dependencies.required &&
+					            			Object.keys(dependencies.required)
+					            		) ||
 					            		[]
 						            	).filter(function (alias) {
 										// We only care about packages we have mappings for.
