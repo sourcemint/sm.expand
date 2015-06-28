@@ -264,12 +264,56 @@ exports.for = function (API) {
 		});
 	}
 
-	function linkSourceDependencies (sourcePaths, mappingsPaths) {
+	function linkSourceDependencies (sourcePaths, mappingsPaths, binaryPathPatterns) {
 		return API.Q.all(Object.keys(sourcePaths).map(function (uid) {
+
 			return API.NPM_LINK_DEPS(sourcePaths[uid], mappingsPaths).then(function () {
 
-// TODO: Link declared bins into bin path template
+				return API.NPM_GET_BINS(sourcePaths[uid]).then(function (binaries) {
 
+					if (!binaries) return;
+
+					return API.Q.all(binaryPathPatterns.map(function (binaryPathPattern) {
+
+						return API.Q.all(Object.keys(binaries).map(function (bin) {
+
+							var targetPath = binaryPathPattern
+								.replace(/\{bin\}/g, bin);
+
+							var sourcePath = API.PATH.join(sourcePaths[uid], binaries[bin]);
+
+							function ensureLinked () {
+								// Remove dead symlinks
+								// TODO: Only do this if symlink creation fails.
+								try {
+									API.FS.removeSync(targetPath);
+								} catch (err) {}
+
+								log("Linking", sourcePath, "to", targetPath);
+								return API.QFS.symbolicLink(targetPath, sourcePath, "directory");
+							}
+
+							return API.QFS.exists(targetPath).then(function (exists) {
+								if (!exists) {
+									return ensureLinked();
+								}
+								return API.QFS.isSymbolicLink(targetPath).then(function (isLink) {
+									if (!isLink) {
+										throw new Error("Path '" + targetPath + "' is not a symlink! Remove first!");
+									}
+									return API.QFS.readLink(targetPath).then(function (linkSource) {
+										if (/^\..\/[^\.]/.test(linkSource)) {
+											return ensureLinked();
+										}
+										if (linkSource !== sourcePath) {
+											throw new Error("Symlink at path '" + targetPath + "' is not pointing to '" + sourcePath + "'! Remove first!");
+										}
+									});
+								});
+							});
+						}));
+					}));
+				});
 			});
 		}));
 	}
@@ -512,6 +556,12 @@ console.log("unresolved", name, "for", plugin);
 					var map = config.descriptor.at("github.com~sourcemint~sm.expand~0/map");
 					var locations = map.at("github.com~sourcemint~sm.expand~0/locations");
 
+					if (!Array.isArray(locations.binaries)) {
+						locations.binaries = [
+							locations.binaries
+						];
+					}
+
 					return ensureSources(
 						map.sources,
 						API.PATH.join(origin, locations.sources)
@@ -525,7 +575,10 @@ console.log("unresolved", name, "for", plugin);
 
 							return linkSourceDependencies(
 								sourcePaths,
-								mappingsInfo.paths
+								mappingsInfo.paths,
+								locations.binaries.map(function (path) {
+									return API.PATH.join(origin, path);
+								})
 							).then(function () {
 
 								return ensureInstalled(
@@ -575,6 +628,7 @@ if (require.main === module) {
 		GIT_CLONE: require("smi-for-git/api/clone-to").for(API).PLFunction,
 		NPM_LINK_DEPS: require("smi-for-npm/api/link-dependencies").for(API).PLFunction,
 		NPM_GET_DEPS: require("smi-for-npm/api/get-dependencies").for(API).PLFunction,
+		NPM_GET_BINS: require("smi-for-npm/api/get-binaries").for(API).PLFunction,
 		NPM_INSTALL_PKG: require("smi-for-npm/api/install-package").for(API).PLFunction
 	});
 
