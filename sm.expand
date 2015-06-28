@@ -27,7 +27,7 @@ exports.for = function (API) {
 
 	function findPackageRoot (path) {
 		path = path.replace(/\/package\.json$/, "");
-		return API.QIO.exists(
+		return API.QFS.exists(
 			API.PATH.join(path, "package.json")
 		).then(function (exists) {
 			if (exists) {
@@ -70,8 +70,63 @@ exports.for = function (API) {
 
 				paths[uid + "/" + rev] = targetPath;
 
+				function markSourceEnsured () {
+					return API.QFS.write(
+						API.PATH.join(targetPath, ".sm.expand.ensured"),
+						""
+					);
+				}
+
 				function isSourceEnsured () {
-					return API.QFS.exists(API.PATH.join(targetPath, ".sm.expand.ensured"));
+					return API.QFS.exists(API.PATH.join(targetPath, ".git")).then(function (exists) {
+						if (!exists) {
+							return API.QFS.exists(API.PATH.join(targetPath, ".sm.expand.ensured"));
+						}
+						// Ensure the commit that is requested is in the history of our current branch.
+						// TODO: Move this into 'smi-for-git' plugin.
+						function getCommitFromUri (uri) {
+							return API.Q.fcall(function () {
+								var m = uri.match(/^git:\/\/(git@github\.com:[^\/]+\/.+?\.git)(#([^\()]+))?(\(([^\)]+)\))?$/);
+								if (!m) {
+									throw new Error("Cloud not parse uri '" + uri + "'");
+								}
+								if (!m[3]) {
+									throw new Error("Uri '" + uri + "' must specify a commit!");
+								}
+								return m[3];
+							});
+						}
+						function isCommitInAncestors (basePath, commit) {
+							return API.Q.denodeify(function (callback) {
+								return API.EXEC(
+									"git rev-list --boundary HEAD --not " + commit,
+									{
+										cwd: basePath
+									},
+									function (err) {
+										if (err) return callback(null, false);
+										return callback(null, true);
+									}
+								);
+							})();
+						}
+
+						return getCommitFromUri(sources[uid][rev].uri).then(function (commit) {
+
+							return isCommitInAncestors(targetPath, commit).then(function (found) {
+
+								if (!found) {
+									throw new Error("Requested commit '" + commit + "' not found in ancestors. You need to switch to the right branch or delete the reporitory to have it download needed commits.");
+								}
+
+								// NOTE: To force a rev-check next time remove this file before calling sm.expand
+								return markSourceEnsured().then(function () {
+
+									return true;
+								});
+							});
+						});
+					});
 				}
 
 				function ensureEmpty () {
@@ -93,13 +148,6 @@ exports.for = function (API) {
 						if (exists) return;
 						return API.Q.nbind(API.FS.mkdirs, API.FS)(API.PATH.dirname(targetPath));
 					});
-				}
-
-				function markSourceEnsured () {
-					return API.QFS.write(
-						API.PATH.join(targetPath, ".sm.expand.ensured"),
-						""
-					);
 				}
 
 				return isSourceEnsured().then(function (ensured) {
