@@ -605,6 +605,21 @@ console.log("unresolved", name, "for", plugin);
 		});
 	}
 
+	function ensureIgnoreRules (sourcePaths, ignoreConfig) {
+		return API.Q.fcall(function () {
+			if (
+				!ignoreConfig ||
+				!ignoreConfig.rules
+			) return;
+			return API.Q.all(Object.keys(sourcePaths).map(function (pointer) {
+				return API.GIT_IGNORE(
+					sourcePaths[pointer],
+					ignoreConfig.rules
+				);
+			}));
+		});
+	}
+
 	exports.for = function (module) {
 
 		log("CODEBASE", __dirname);
@@ -664,6 +679,14 @@ console.log("unresolved", name, "for", plugin);
 									sourcePaths,
 									locations.registries
 								);
+
+							}).then(function () {
+
+								return ensureIgnoreRules(
+									sourcePaths,
+									config.descriptor.at("github.com~sourcemint~smi-for-git~0/ignore")
+								);
+
 							});
 						});
 					});
@@ -691,6 +714,7 @@ if (require.main === module) {
 		FS: require("fs"),
 		EXEC: require("child_process").exec,
 		SPAWN: require("child_process").spawn,
+		REGEXP_ESCAPE: require("escape-regexp-component"),
 		Q: require("q"),
 		QFS: require("q-io/fs"),
 		env: {
@@ -704,6 +728,7 @@ if (require.main === module) {
 		CONFIG: require("pinf.logic-for-json").for(API),
 		RESOLVE: require("sm.resolve").for(module),
 		GIT_CLONE: require("smi-for-git/api/clone-to").for(API).PLFunction,
+		GIT_IGNORE: require("smi-for-git/api/ensure-ignore").for(API).PLFunction,
 		NPM_LINK_DEPS: require("smi-for-npm/api/link-dependencies").for(API).PLFunction,
 		NPM_GET_DEPS: require("smi-for-npm/api/get-dependencies").for(API).PLFunction,
 		NPM_GET_BINS: require("smi-for-npm/api/get-binaries").for(API).PLFunction,
