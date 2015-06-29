@@ -44,7 +44,7 @@ function install (callback) {
 		if (linkAndInstallPackage._basePaths[basePath]) return callback(null);
 		linkAndInstallPackage._basePaths[basePath] = true;
 
-		var dependencies = require(PATH.join(__dirname, "../package.json")).dependencies;
+		var dependencies = require(PATH.join(basePath, "package.json")).dependencies;
 		if (!dependencies) {
 			return callback(null);
 		}
@@ -67,7 +67,7 @@ function install (callback) {
 					"--production"
 				], {
 					cwd: basePath,
-					stdio: "pipe"
+					stdio: "inherit"
 				});
 				proc.on("error", callback);
 				return proc.on("close", function () {
@@ -75,6 +75,7 @@ function install (callback) {
 				});
 			}
 		}
+
 		Object.keys(dependencies).forEach(function (alias) {
 			if (!mappings[alias]) return;
 
