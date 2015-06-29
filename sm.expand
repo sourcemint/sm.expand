@@ -73,8 +73,11 @@ exports.for = function (API) {
 
 				return API.QFS.exists(path).then(function (exists) {
 					if (exists) {
-						return API.QFS.canonical(path).then(function (path) {
-							shared[uid][rev] = path;
+						return API.QFS.canonical(path).then(function (realpath) {
+							shared[uid][rev] = {
+								path: path,
+								realpath: realpath
+							}
 						});
 					}
 				});
@@ -85,6 +88,7 @@ exports.for = function (API) {
 	}
 
 	function ensureSources (sources, targetPathPattern, sharedSources) {
+
 		var paths = {};
 		return API.Q.all(Object.keys(sources).map(function (uid) {
 			return API.Q.all(Object.keys(sources[uid]).map(function (rev) {
@@ -100,9 +104,9 @@ exports.for = function (API) {
 						if (
 							sharedSources[uid] &&
 							sharedSources[uid][rev] &&
-							sharedSources[uid][rev] !== targetPath
+							sharedSources[uid][rev].realpath !== targetPath
 						) {
-							return sharedSources[uid][rev];
+							return sharedSources[uid][rev].path;
 						}
 						return false;
 					});
@@ -115,7 +119,28 @@ exports.for = function (API) {
 					);
 				}
 
-				function isSourceEnsured () {
+				function isSourceEnsured (registryPath) {
+
+					function linkToRegistry () {
+						try {
+							API.FS.removeSync(targetPath);
+						} catch (err) {}
+
+						if (!API.FS.existsSync(API.PATH.dirname(targetPath))) {
+							API.FS.mkdirsSync(API.PATH.dirname(targetPath));
+						}
+
+						log("Linking", registryPath, "to", targetPath);
+						return API.QFS.symbolicLink(targetPath, registryPath, "directory");
+					}
+
+					if (registryPath) {
+						return linkToRegistry().then(function () {
+
+							return true;
+						});
+					}
+
 					return API.QFS.exists(API.PATH.join(targetPath, ".git")).then(function (exists) {
 						if (!exists) {
 							return API.QFS.exists(API.PATH.join(targetPath, ".sm.expand.ensured"));
@@ -199,7 +224,7 @@ exports.for = function (API) {
 
 				return isSourceInRegistry().then(function (registryPath) {
 
-					return isSourceEnsured().then(function (ensured) {
+					return isSourceEnsured(registryPath).then(function (ensured) {
 						if (ensured) {
 							log(uid, rev, "already sourced");
 							return;
@@ -290,6 +315,10 @@ exports.for = function (API) {
 				try {
 					API.FS.removeSync(targetPath);
 				} catch (err) {}
+
+				if (!API.FS.existsSync(API.PATH.dirname(targetPath))) {
+					API.FS.mkdirsSync(API.PATH.dirname(targetPath));
+				}
 
 				log("Linking", sourcePath, "to", targetPath);
 				return API.QFS.symbolicLink(targetPath, sourcePath, "directory");
