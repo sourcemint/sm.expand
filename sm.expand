@@ -102,8 +102,6 @@ exports.for = function (API) {
 							sharedSources[uid][rev] &&
 							sharedSources[uid][rev] !== targetPath
 						) {
-console.log("FOUDN IN REGISTRYR", sharedSources[uid][rev]);
-console.log("FOUDN IN REGISTRYR", "targetPath", targetPath);
 							return sharedSources[uid][rev];
 						}
 						return false;
@@ -131,7 +129,9 @@ console.log("FOUDN IN REGISTRYR", "targetPath", targetPath);
 									throw new Error("Cloud not parse uri '" + uri + "'");
 								}
 								if (!m[3]) {
-									throw new Error("Uri '" + uri + "' must specify a commit!");
+									// TODO: Optionally throw if we require a commit.
+									// throw new Error("Uri '" + uri + "' must specify a commit!");
+									return null;
 								}
 								return m[3];
 							});
@@ -151,7 +151,18 @@ console.log("FOUDN IN REGISTRYR", "targetPath", targetPath);
 							})();
 						}
 
+						function ensured () {
+							// NOTE: To force a rev-check next time remove this file before calling sm.expand
+							return markSourceEnsured().then(function () {
+								return true;
+							});								
+						}
+
 						return getCommitFromUri(sources[uid][rev].uri).then(function (commit) {
+
+							if (!commit) {
+								return ensured();
+							}
 
 							return isCommitInAncestors(targetPath, commit).then(function (found) {
 
@@ -159,11 +170,7 @@ console.log("FOUDN IN REGISTRYR", "targetPath", targetPath);
 									throw new Error("Requested commit '" + commit + "' not found in ancestors. You need to switch to the right branch or delete the reporitory to have it download needed commits.");
 								}
 
-								// NOTE: To force a rev-check next time remove this file before calling sm.expand
-								return markSourceEnsured().then(function () {
-
-									return true;
-								});
+								return ensured();
 							});
 						});
 					});
@@ -191,8 +198,6 @@ console.log("FOUDN IN REGISTRYR", "targetPath", targetPath);
 				}
 
 				return isSourceInRegistry().then(function (registryPath) {
-
-console.log("registryPath", registryPath);
 
 					return isSourceEnsured().then(function (ensured) {
 						if (ensured) {
