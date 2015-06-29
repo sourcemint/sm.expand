@@ -121,40 +121,44 @@ exports.for = function (API) {
 
 				function isSourceEnsured (registryPath) {
 
-					return API.QFS.exists(API.PATH.join(targetPath, ".git")).then(function (exists) {
-						if (!exists) {
-							return API.QFS.exists(API.PATH.join(targetPath, ".sm.expand.ensured"));
-						}
-
-						function isLinkedToRegistry () {
+					function isLinkedToRegistry () {
+						return API.QFS.exists(targetPath).then(function (exists) {
+							if (!exists) return false;
 							return API.QFS.isSymbolicLink(targetPath).then(function (isLink) {
 								if (!isLink) return false;
 								return API.QFS.readLink(targetPath).then(function (sourcePath) {
 									return (sourcePath === registryPath);
 								});
 							});
+						});
+					}
+
+					function linkToRegistry () {
+						try {
+							API.FS.removeSync(targetPath);
+						} catch (err) {}
+
+						if (!API.FS.existsSync(API.PATH.dirname(targetPath))) {
+							API.FS.mkdirsSync(API.PATH.dirname(targetPath));
 						}
 
-						function linkToRegistry () {
-							try {
-								API.FS.removeSync(targetPath);
-							} catch (err) {}
+						log("Linking", registryPath, "to", targetPath);
+						return API.QFS.symbolicLink(targetPath, registryPath, "directory");
+					}
 
-							if (!API.FS.existsSync(API.PATH.dirname(targetPath))) {
-								API.FS.mkdirsSync(API.PATH.dirname(targetPath));
-							}
+					if (registryPath) {
+						return isLinkedToRegistry().then(function (isLinked) {
+							if (isLinked) return;
+							return linkToRegistry();
+						}).then(function () {
+							return true;
+						});
+					}
 
-							log("Linking", registryPath, "to", targetPath);
-							return API.QFS.symbolicLink(targetPath, registryPath, "directory");
-						}
+					return API.QFS.exists(API.PATH.join(targetPath, ".git")).then(function (exists) {
 
-						if (registryPath) {
-							return isLinkedToRegistry().then(function (isLinked) {
-								if (isLinked) return;
-								return linkToRegistry();
-							}).then(function () {
-								return true;
-							});
+						if (!exists) {
+							return API.QFS.exists(API.PATH.join(targetPath, ".sm.expand.ensured"));
 						}
 
 						// Ensure the commit that is requested is in the history of our current branch.
@@ -621,6 +625,7 @@ console.log("unresolved", name, "for", plugin);
 						);
 					} else {
 						// No installer declared so we don't do anything here.
+						log("WARNING: Skip install. No installer set for:", id);						
 					}
 				}).then(function () {
 
