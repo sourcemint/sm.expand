@@ -121,30 +121,42 @@ exports.for = function (API) {
 
 				function isSourceEnsured (registryPath) {
 
-					function linkToRegistry () {
-						try {
-							API.FS.removeSync(targetPath);
-						} catch (err) {}
-
-						if (!API.FS.existsSync(API.PATH.dirname(targetPath))) {
-							API.FS.mkdirsSync(API.PATH.dirname(targetPath));
-						}
-
-						log("Linking", registryPath, "to", targetPath);
-						return API.QFS.symbolicLink(targetPath, registryPath, "directory");
-					}
-
-					if (registryPath) {
-						return linkToRegistry().then(function () {
-
-							return true;
-						});
-					}
-
 					return API.QFS.exists(API.PATH.join(targetPath, ".git")).then(function (exists) {
 						if (!exists) {
 							return API.QFS.exists(API.PATH.join(targetPath, ".sm.expand.ensured"));
 						}
+
+						function isLinkedToRegistry () {
+							return API.QFS.isSymbolicLink(targetPath).then(function (isLink) {
+								if (!isLink) return false;
+								return API.QFS.readLink(targetPath).then(function (sourcePath) {
+									return (sourcePath === registryPath);
+								});
+							});
+						}
+
+						function linkToRegistry () {
+							try {
+								API.FS.removeSync(targetPath);
+							} catch (err) {}
+
+							if (!API.FS.existsSync(API.PATH.dirname(targetPath))) {
+								API.FS.mkdirsSync(API.PATH.dirname(targetPath));
+							}
+
+							log("Linking", registryPath, "to", targetPath);
+							return API.QFS.symbolicLink(targetPath, registryPath, "directory");
+						}
+
+						if (registryPath) {
+							return isLinkedToRegistry().then(function (isLinked) {
+								if (isLinked) return;
+								return linkToRegistry();
+							}).then(function () {
+								return true;
+							});
+						}
+
 						// Ensure the commit that is requested is in the history of our current branch.
 						// TODO: Move this into 'smi-for-git' plugin.
 						function getCommitFromUri (uri) {
