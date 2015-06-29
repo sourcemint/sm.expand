@@ -59,19 +59,26 @@ exports.for = function (API) {
 		});
 	}
 
-	function resolveSourcesInRegistries (sources) {
+	function resolveSourcesInRegistries (sources, registryPathPatterns) {
 		var shared = {};
 		return API.Q.all(Object.keys(sources).map(function (uid) {
 
-			var path = API.RESOLVE(uid, "", {
-				scope: API.RESOLVE.SCOPE.SYSTEMS
-			}).toPath();
+			shared[uid] = {};
 
-			if (path) {
-				shared[uid] = path;
-			}
+			return API.Q.all(Object.keys(sources[uid]).map(function (rev) {
 
-			return API.Q.resolve();
+				var path = registryPathPatterns
+					.replace(/\{uid\}/g, uid)
+					.replace(/\{rev\}/g, rev);
+
+				return API.QFS.exists(path).then(function (exists) {
+					if (exists) {
+						return API.QFS.canonical(path).then(function (path) {
+							shared[uid][rev] = path;
+						});
+					}
+				});
+			}));
 		})).then(function () {
 			return shared;
 		});
@@ -90,8 +97,14 @@ exports.for = function (API) {
 
 				function isSourceInRegistry () {
 					return API.Q.fcall(function () {
-						if (sharedSources[uid] !== targetPath) {
-							return sharedSources[uid];
+						if (
+							sharedSources[uid] &&
+							sharedSources[uid][rev] &&
+							sharedSources[uid][rev] !== targetPath
+						) {
+console.log("FOUDN IN REGISTRYR", sharedSources[uid][rev]);
+console.log("FOUDN IN REGISTRYR", "targetPath", targetPath);
+							return sharedSources[uid][rev];
 						}
 						return false;
 					});
@@ -320,6 +333,10 @@ console.log("registryPath", registryPath);
 								try {
 									API.FS.removeSync(targetPath);
 								} catch (err) {}
+
+								if (!API.FS.existsSync(API.PATH.dirname(targetPath))) {
+									API.FS.mkdirsSync(API.PATH.dirname(targetPath));
+								}
 
 								log("Linking", sourcePath, "to", targetPath);
 								return API.QFS.symbolicLink(targetPath, sourcePath, "directory");
@@ -592,6 +609,10 @@ console.log("unresolved", name, "for", plugin);
 						API.FS.removeSync(targetPath);
 					} catch (err) {}
 
+					if (!API.FS.existsSync(API.PATH.dirname(targetPath))) {
+						API.FS.mkdirsSync(API.PATH.dirname(targetPath));
+					}
+
 					log("Linking", sourcePath, "to", targetPath);
 					return API.QFS.symbolicLink(targetPath, sourcePath, "directory");
 				}
@@ -644,7 +665,8 @@ console.log("unresolved", name, "for", plugin);
 					}
 
 					return resolveSourcesInRegistries(
-						map.sources
+						map.sources,
+						locations.registries
 					).then(function (sharedSources) {
 
 						return ensureSources(
@@ -727,7 +749,6 @@ if (require.main === module) {
 
 	API.EXTEND(false, API, {
 		CONFIG: require("pinf.logic-for-json").for(API),
-		RESOLVE: require("sm.resolve").for(module),
 		GIT_CLONE: require("smi-for-git/api/clone-to").for(API).PLFunction,
 		GIT_IGNORE: require("smi-for-git/api/ensure-ignore").for(API).PLFunction,
 		NPM_LINK_DEPS: require("smi-for-npm/api/link-dependencies").for(API).PLFunction,
