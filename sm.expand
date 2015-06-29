@@ -305,7 +305,9 @@ exports.for = function (API) {
 					}
 					return API.QFS.isSymbolicLink(targetPath).then(function (isLink) {
 						if (!isLink) {
-							throw new Error("Path '" + targetPath + "' is not a symlink! Remove first!");
+							//throw new Error("Path '" + targetPath + "' is not a symlink! Remove first!");
+							// This will remove whatever is there.
+							return false;
 						}
 						return API.QFS.readLink(targetPath).then(function (linkSource) {
 							if (linkSource !== sourcePath) {
