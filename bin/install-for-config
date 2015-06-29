@@ -3,6 +3,7 @@
 const PATH = require("path");
 const FS = require("fs");
 const SPAWN = require("child_process").spawn;
+const WAITFOR = require("../lib/waitfor");
 
 // NOTE: This module needs to stay pure NodeJS without any external dependencies
 //       so we can always install `sm.expand` in a new environment while still
@@ -55,26 +56,23 @@ function install (callback) {
 		}
 
 		// Link mapped dependencies.
-		var c = 0;
-		function done (err) {
+		var waitfor = WAITFOR.parallel(function (err) {
 			if (err) return callback(err);
-			if (c === 0) {
-				if (process.env.VERBOSE) {
-					console.log("Installing package with 'npm':", basePath);
-				}
-				var proc = SPAWN("npm", [
-					"install",
-					"--production"
-				], {
-					cwd: basePath,
-					stdio: "inherit"
-				});
-				proc.on("error", callback);
-				return proc.on("close", function () {
-					return callback(null);
-				});
+			if (process.env.VERBOSE) {
+				console.log("Installing package with 'npm':", basePath);
 			}
-		}
+			var proc = SPAWN("npm", [
+				"install",
+				"--production"
+			], {
+				cwd: basePath,
+				stdio: "inherit"
+			});
+			proc.on("error", callback);
+			return proc.on("close", function () {
+				return callback(null);
+			});
+		});
 
 		Object.keys(dependencies).forEach(function (alias) {
 			if (!mappings[alias]) return;
@@ -92,31 +90,28 @@ function install (callback) {
 
 			// We don't touch existig modules.
 			if (FS.existsSync(targetPath)) {
-				return done();
+				return;
 			}
 
 			// First we do the same for the mapped dependencies.
 
-			c++
-			return linkAndInstallPackage(sourcePath, function (err) {
-				c--
-				if (err) return done(err);
+			waitfor(function (callback) {
+				return linkAndInstallPackage(sourcePath, function (err) {
+					if (err) return callback(err);
 
-				try {
-					FS.unlinkSync(targetPath);
-				} catch (err) {}
+					try {
+						FS.unlinkSync(targetPath);
+					} catch (err) {}
 
-				if (process.env.VERBOSE) {
-					console.log("Linking", sourcePath, "to", targetPath);
-				}
+					if (process.env.VERBOSE) {
+						console.log("Linking", sourcePath, "to", targetPath);
+					}
 
-				c++;
-				return FS.symlink(sourcePath, targetPath, function (err) {
-					c--;
-					return done(err);
+					return FS.symlink(sourcePath, targetPath, callback);
 				});
 			});
 		});
+		waitfor();
 	}
 
 	return linkAndInstallPackage(ownBasePath, callback);
