@@ -88,14 +88,19 @@ function install (callback) {
 					.replace(/\{rev\}/g, pointer[1])
 			);
 
+			var targetPath = PATH.join(targetBasePath, alias);
+
+			// We don't touch existig modules.
+			if (FS.existsSync(targetPath)) {
+				return done();
+			}
+
 			// First we do the same for the mapped dependencies.
 
 			c++
 			return linkAndInstallPackage(sourcePath, function (err) {
 				c--
 				if (err) return done(err);
-
-				var targetPath = PATH.join(targetBasePath, alias);
 
 				try {
 					FS.unlinkSync(targetPath);
