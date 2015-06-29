@@ -580,7 +580,8 @@ console.log("unresolved", name, "for", plugin);
 				var pointerParts = pointer.split("/");
 
 				var targetPath = registryPathPatterns
-					.replace(/\{uid\}/g, pointerParts[0]);
+					.replace(/\{uid\}/g, pointerParts[0])
+					.replace(/\{rev\}/g, pointerParts[1]);
 
 				var sourcePath = sourcePaths[pointer];
 
