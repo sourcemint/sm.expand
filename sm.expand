@@ -61,6 +61,9 @@ exports.for = function (API) {
 
 	function resolveSourcesInRegistries (sources, registryPathPatterns) {
 		var shared = {};
+		if (!registryPathPatterns) {
+			return API.Q.resolve(shared);
+		}
 		return API.Q.all(Object.keys(sources).map(function (uid) {
 
 			shared[uid] = {};
@@ -142,7 +145,7 @@ exports.for = function (API) {
 							API.FS.mkdirsSync(API.PATH.dirname(targetPath));
 						}
 
-						log("Linking", registryPath, "to", targetPath);
+						log("Linking to registry", registryPath, "to", targetPath);
 						return API.QFS.symbolicLink(targetPath, registryPath, "directory");
 					}
 
@@ -165,7 +168,7 @@ exports.for = function (API) {
 						// TODO: Move this into 'smi-for-git' plugin.
 						function getCommitFromUri (uri) {
 							return API.Q.fcall(function () {
-								var m = uri.match(/^git:\/\/(git@github\.com:[^\/]+\/.+?\.git)(#([^\()]+))?(\(([^\)]+)\))?$/);
+								var m = uri.match(/^git:\/\/(git@github\.com:[^\/]+\/.+?\.git)(#([^\()]*))?(\(([^\)]+)\))?$/);
 								if (!m) {
 									throw new Error("Cloud not parse uri '" + uri + "'");
 								}
@@ -328,6 +331,13 @@ exports.for = function (API) {
 			}
 
 			function ensureLinked () {
+
+				if (sourcePath.substring(0, targetPath.length) === targetPath) {
+					// If this link went ahead we would remove the source paths
+					// and create a dead link!
+					return API.Q.resolve();
+				}
+
 				// Remove dead symlinks
 				// TODO: Only do this if symlink creation fails.
 				try {
@@ -338,7 +348,6 @@ exports.for = function (API) {
 					API.FS.mkdirsSync(API.PATH.dirname(targetPath));
 				}
 
-				log("Linking", sourcePath, "to", targetPath);
 				return API.QFS.symbolicLink(targetPath, sourcePath, "directory");
 			}
 
@@ -702,19 +711,31 @@ console.log("unresolved", name, "for", plugin);
 
 		var origin = API.env.CWD;
 
-		var expand = function () {
+		var expand = function (overrideConfig) {
 
 			return findPackageRoot(module.filename).then(function (packageBasePath) {
 
 				return API.CONFIG("file://" + packageBasePath + "/package.json").then(function (config) {
 
-					var map = config.descriptor.at("github.com~sourcemint~sm.expand~0/map");
+					var map = null;
+
+					if (
+						overrideConfig &&
+						overrideConfig["github.com~sourcemint~sm.expand~0/map"]
+					) {
+						map = overrideConfig["github.com~sourcemint~sm.expand~0/map"];
+					} else {
+						map = config.descriptor.at("github.com~sourcemint~sm.expand~0/map");
+					}
+
 					var locations = map.at("github.com~sourcemint~sm.expand~0/locations");
 
-					if (!Array.isArray(locations.binaries)) {
-						locations.binaries = [
-							locations.binaries
-						];
+					if (locations.binaries) {
+						if (!Array.isArray(locations.binaries)) {
+							locations.binaries = [
+								locations.binaries
+							];
+						}
 					}
 
 					return resolveSourcesInRegistries(
@@ -728,19 +749,35 @@ console.log("unresolved", name, "for", plugin);
 							sharedSources
 						).then(function (sourcePaths) {
 
-							return ensureMappings(
-								map.mappings,
-								sourcePaths,
-								API.PATH.join(origin, locations.mappings)
-							).then(function (mappingsInfo) {
-
-								return linkSourceDependencies(
+							function onlyIfMappingsDeclared () {
+								if (!locations.mappings) {
+									return API.Q.resolve({
+										paths: {},
+										aliases: {}
+									});
+								}
+								return ensureMappings(
+									map.mappings,
 									sourcePaths,
-									mappingsInfo.paths,
-									locations.binaries.map(function (path) {
-										return API.PATH.join(origin, path);
-									})
-								).then(function () {
+									API.PATH.join(origin, locations.mappings)
+								);
+							}
+
+							return onlyIfMappingsDeclared().then(function (mappingsInfo) {
+
+								function onlyIfBinariesDeclared () {
+									if (!locations.binaries) return API.Q.resolve();
+
+									return linkSourceDependencies(
+										sourcePaths,
+										mappingsInfo.paths,
+										locations.binaries.map(function (path) {
+											return API.PATH.join(origin, path);
+										})
+									);
+								}
+
+								return onlyIfBinariesDeclared().then(function () {
 
 									return ensureInstalled(
 										map.sources,
@@ -763,14 +800,17 @@ console.log("unresolved", name, "for", plugin);
 									config.descriptor.at("github.com~sourcemint~smi-for-git~0/ignore")
 								);
 
+							}).then(function () {
+								return {
+									sourcePaths: sourcePaths
+								}
 							});
 						});
 					});
 
-				}).then(function () {
-					return {
-						expanded: true
-					};
+				}).then(function (info) {
+					info.expanded = true;
+					return info;
 				});
 			});
 		}
@@ -779,13 +819,13 @@ console.log("unresolved", name, "for", plugin);
 	return exports;
 }
 
-
-if (require.main === module) {
+exports.api = function (options) {
 
 	// Establish container environment for the module.
 
 	const API = {
 		EXTEND: require("extend"),
+		DEEPMERGE: require("deepmerge"),
 		PATH: require("path"),
 		FS: require("fs"),
 		EXEC: require("child_process").exec,
@@ -812,16 +852,20 @@ if (require.main === module) {
 
 	var api = exports.for(API);
 
-	API.Q.when(api.for({
-		filename: process.argv[2]
-	})()).then(function (info) {
+	return api.for(options);
+}
+
+if (require.main === module) {
+
+	require("q").when(
+		exports.api({
+			filename: process.argv[2]
+		})()
+	).then(function (info) {
 		if (info.expanded) {
 			process.exit(0);
 		} else {
 			process.exit(1);
 		}
-	}).fail(function (err) {
-		console.error("ERROR:", err.stack || err);
-		process.exit(1);
 	});
 }
