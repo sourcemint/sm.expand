@@ -867,5 +867,9 @@ if (require.main === module) {
 		} else {
 			process.exit(1);
 		}
+	}).fail(function (err) {
+		console.error("ERROR:", err.stack || err);
+		process.exit(1);
 	});
 }
+
