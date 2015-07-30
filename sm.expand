@@ -38,7 +38,8 @@ exports.for = function (API) {
 				}
 				throttle_running += 1;
 				var task = throttle_waiting.shift();
-				return task[1](function() {
+				return task[1](function(err) {
+					if (err) return callback(err);
 					throttle_running -= 1;
 					iterate();
 					return callback.apply(null, Array.prototype.slice.call(arguments, 0));
@@ -120,7 +121,7 @@ exports.for = function (API) {
 
 				return API.Q.denodeify(function (callback) {
 
-					return throttle(callback, function(callback) {
+					throttle(callback, function(callback) {
 
 						var targetPath = targetPathPattern
 							.replace(/\{uid\}/g, uid)
@@ -307,6 +308,9 @@ exports.for = function (API) {
 				})();					
 			}));
 		})).then(function () {
+
+			log("All sources ensured");
+
 			return paths;
 		});
 	}
