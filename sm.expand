@@ -714,12 +714,21 @@ console.log("unresolved", name, "for", plugin);
 		var expand = function (overrideConfig) {
 
 			function expandIteration (previousMissingExtendsPaths) {
-				
-				return findPackageRoot(module.filename).then(function (packageBasePath) {
+
+				function getPackageRoot (path) {
+					if (/\.json$/.test(path)) {
+						return API.Q.resolve(path);
+					}
+					return findPackageRoot(module.filename).then(function (basePath) {
+						return (basePath + "/package.json");
+					});
+				}
+
+				return getPackageRoot(module.filename).then(function (descriptorPath) {
 
 					var missingExtendsPaths = {};
 
-					return API.CONFIG("file://" + packageBasePath + "/package.json", {
+					return API.CONFIG("file://" + descriptorPath, {
 						ignoreMissingExtends: function (path) {
 							missingExtendsPaths[path] = true;
 						}
@@ -734,6 +743,11 @@ console.log("unresolved", name, "for", plugin);
 							map = overrideConfig["github.com~sourcemint~sm.expand~0/map"];
 						} else {
 							map = config.descriptor.at("github.com~sourcemint~sm.expand~0/map");
+						}
+
+						if (!map) {
+							console.log("Skip file '" + descriptorPath +  "' as no sm map config present.");
+							return;
 						}
 
 						var locations = map.at("github.com~sourcemint~sm.expand~0/locations");
