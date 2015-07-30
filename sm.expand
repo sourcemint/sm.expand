@@ -3,6 +3,52 @@
 
 exports.for = function (API) {
 
+
+
+	var Throttle = function(max)
+	{
+		if (!(this instanceof Throttle))
+	        return new Throttle(max);
+
+		this.count = 0;
+		this.buffer = [];
+		this.max = max;
+	};
+	Throttle.prototype = new API.EVENTS.EventEmitter();
+	Throttle.prototype.when = function(args, func)
+	{
+		var self = this,
+			result;
+
+		if (self.count >= self.max)
+		{
+			self.buffer.push([args, func]);
+			return;
+		}
+		self.count += 1;
+
+		result = func.apply(null, args);
+		
+		API.Q.when(result, function()
+		{
+			self.count -= 1;
+			if (self.buffer.length > 0)
+			{
+				var info = self.buffer.shift();
+				self.when(info[0], info[1]);
+			}
+			else
+			if (self.count === 0)
+			{
+				self.emit("done");
+			}
+		}, function(err)
+		{
+			self.emit("error", err);
+		});
+	}
+
+
 	var exports = {};
 
 	function formatLogArgs (args) {
@@ -23,29 +69,6 @@ exports.for = function (API) {
 		if (!API.env.VERBOSE) return;
 		var args = Array.prototype.slice.call(arguments);
 		console.log.call(console, "[sm.expand]", formatLogArgs(args));
-	}
-
-	var throttle_waiting = [];
-	var throttle_running = 0;
-	function throttle(callback, runner) {
-		throttle_waiting.push([callback, runner]);
-		if (throttle_waiting.length === 1) {
-			(function iterate() {
-				if (throttle_waiting.length === 0) return;
-				if (throttle_running > 5) {
-					//console.log("Waiting before starting additional code path.");
-					return;
-				}
-				throttle_running += 1;
-				var task = throttle_waiting.shift();
-				return task[1](function(err) {
-					if (err) return callback(err);
-					throttle_running -= 1;
-					iterate();
-					return callback.apply(null, Array.prototype.slice.call(arguments, 0));
-				});
-			})();
-		}
 	}
 
 	function findPackageRoot (path) {
@@ -115,13 +138,15 @@ exports.for = function (API) {
 
 	function ensureSources (sources, targetPathPattern, sharedSources) {
 
-		var paths = {};
-		return API.Q.all(Object.keys(sources).map(function (uid) {
-			return API.Q.all(Object.keys(sources[uid]).map(function (rev) {
+		return API.Q.denodeify(function (callback) {
 
-				return API.Q.denodeify(function (callback) {
+			var throttle = Throttle(5);
 
-					throttle(callback, function(callback) {
+			var paths = {};
+			Object.keys(sources).forEach(function (uid) {
+				Object.keys(sources[uid]).forEach(function (rev) {
+
+					throttle.when([], function() {
 
 						var targetPath = targetPathPattern
 							.replace(/\{uid\}/g, uid)
@@ -301,18 +326,16 @@ exports.for = function (API) {
 									});
 								});
 							});
-						}).then(function () {
-							return callback(null);
-						}).fail(callback);
-					});
-				})();					
-			}));
-		})).then(function () {
+						});
+					});					
+				});
+			});
 
-			log("All sources ensured");
+			throttle.on("done", function () {
+				callback(null, paths);
+			});
 
-			return paths;
-		});
+		})();
 	}
 
 	function ensureMappings (mappings, sourcePaths, targetPathPattern) {
@@ -652,49 +675,62 @@ console.log("unresolved", name, "for", plugin);
 		}
 
 		return discoverOrder().then(function (packageInfo) {
-			var done = API.Q.resolve();
+
+			var deferred = API.Q.defer();
+
+			var throttle = new Throttle(3);
+
 			packageInfo.order.forEach(function (id) {
-				done = API.Q.when(done, function () {
 
-					if (packageInfo.installed[id]) {
-						log("Skip ensure source installed for", id, "as already installed!");
-						return;
-					}
+				throttle.when([], function() {
 
-					log("Ensure source installed for", id);
+					return API.Q.fcall(function () {
 
-					var idParts = id.split("/");
-					var installer = sources[idParts[0]][idParts[1]].installer;
-					if (installer) {
+						if (packageInfo.installed[id]) {
+							log("Skip ensure source installed for", id, "as already installed!");
+							return;
+						}
 
-						return API.Q.denodeify(function (callback) {
+						log("Ensure source installed for", id);
 
-							return throttle(callback, function(callback) {
+						var idParts = id.split("/");
+						var installer = sources[idParts[0]][idParts[1]].installer;
+						if (installer) {
 
-								return installUsing(
-									sourcePaths[id],
-									installer
-								).then(function () {
-									return callback();
-								}).fail(callback);
+							return API.Q.denodeify(function (callback) {
 
-							});
-						})();
+								return throttle(callback, function(callback) {
 
-					} else {
-						// No installer declared so we don't do anything here.
-						log("WARNING: Skip install. No installer set for:", id);						
-					}
-				}).then(function () {
+									return installUsing(
+										sourcePaths[id],
+										installer
+									).then(function () {
+										return callback();
+									}).fail(callback);
 
-					return markSourceInstalled(sourcePaths[id]).then(function () {
+								});
+							})();
 
-						log("Source install ensured for", id);
+						} else {
+							// No installer declared so we don't do anything here.
+							log("WARNING: Skip install. No installer set for:", id);						
+						}
+					}).then(function () {
 
+						return markSourceInstalled(sourcePaths[id]).then(function () {
+
+							log("Source install ensured for", id);
+
+						});
 					});
 				});
 			});
-			return done;
+
+			throttle.on("done", function() {
+				deferred.resolve();
+			});
+
+			return deferred.promise;
 		});
 	}
 
@@ -940,6 +976,7 @@ exports.api = function (options) {
 
 	const API = {
 		EXTEND: require("extend"),
+		EVENTS: require("events"),
 		DEEPMERGE: require("deepmerge"),
 		PATH: require("path"),
 		FS: require("fs"),
