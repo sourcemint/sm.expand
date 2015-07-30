@@ -124,11 +124,7 @@ exports.for = function (API) {
 
 				function isSourceEnsured (registryPath) {
 
-					log("Is source ensured - registryPath: " + registryPath);
-
 					function isLinkedToRegistry () {
-
-						log("isLinkedToRegistry - targetPath: " + targetPath);
 
 						return API.QFS.exists(targetPath).then(function (exists) {
 							if (!exists) return false;
@@ -141,10 +137,7 @@ exports.for = function (API) {
 						});
 					}
 
-					function linkToRegistry () {
-
-						log("linkToRegistry - targetPath: " + targetPath);
-						log("linkToRegistry - registryPath: " + registryPath);
+					function linkFromRegistry () {
 
 						try {
 							API.FS.removeSync(targetPath);
@@ -154,14 +147,14 @@ exports.for = function (API) {
 							API.FS.mkdirsSync(API.PATH.dirname(targetPath));
 						}
 
-						log("Linking to registry", registryPath, "to", targetPath);
+						log("Linking from registry", registryPath, "to", targetPath);
 						return API.QFS.symbolicLink(targetPath, registryPath, "directory");
 					}
 
 					if (registryPath) {
 						return isLinkedToRegistry().then(function (isLinked) {
 							if (isLinked) return;
-							return linkToRegistry();
+							return linkFromRegistry();
 						}).then(function () {
 							return true;
 						});
