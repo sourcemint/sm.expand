@@ -301,6 +301,12 @@ exports.for = function (API) {
 			paths[alias] = targetPath;
 			aliases[mappings[alias]] = alias;
 
+			function alreadyExists() {
+				return API.QFS.exists(targetPath).then(function (exists) {				
+					return exists;
+				}); 
+			}
+
 			function isLinked () {
 				return API.QFS.exists(API.PATH.join(targetPath, ".sm.expand.ensured")).then(function (exists) {				
 					if (!exists) {
@@ -351,16 +357,23 @@ exports.for = function (API) {
 				return API.QFS.symbolicLink(targetPath, sourcePath, "directory");
 			}
 
-			return isLinked().then(function (linked) {
-				if (linked) {
-					log(alias, "already linked");
+			return alreadyExists().then(function (exists) {
+				if (exists) {
+					log(alias, "already exists");
 					return;
 				}
 
-				return ensureBase().then(function () {
+//				return isLinked().then(function (linked) {
+//					if (linked) {
+//						log(alias, "already linked");
+//						return;
+//					}
 
-					return ensureLinked();
-				});
+					return ensureBase().then(function () {
+
+						return ensureLinked();
+					});
+//				});
 			});
 		})).then(function () {
 			return {
