@@ -1,7 +1,7 @@
 {
     "uid": "github.com~sourcemint~sm.expand~0",
     "name": "sm.expand",
-    "version": "0.1.5",
+    "version": "0.1.6",
     "repository": "https://github.com/sourcemint/sm.expand.git",
     "main": "sm.expand",
     "bin": {
