@@ -472,6 +472,8 @@ exports.for = function (API) {
 
 				return API.Q.all(Object.keys(sourcePaths).map(function (id) {
 
+					log("Check if source installed for: " + id);
+
 					return isSourceInstalled(sourcePaths[id]).then(function (installed) {
 						if (installed) {
 							// Package is already installed so we don't need to check its dependencies.
@@ -756,6 +758,8 @@ console.log("unresolved", name, "for", plugin);
 
 			function expandIteration (previousMissingExtendsPaths) {
 
+				log("New expand iteration");
+
 				function getPackageRoot (path) {
 					if (/\.json$/.test(path)) {
 						return API.Q.resolve(path);
@@ -801,10 +805,14 @@ console.log("unresolved", name, "for", plugin);
 							}
 						}
 
+						log("Resolve in registries");
+
 						return resolveSourcesInRegistries(
 							map.sources,
 							locations.registries
 						).then(function (sharedSources) {
+
+							log("Ensure sources");
 
 							return ensureSources(
 								map.sources,
@@ -814,11 +822,17 @@ console.log("unresolved", name, "for", plugin);
 
 								function onlyIfMappingsDeclared () {
 									if (!locations.mappings) {
+			
+										log("No mappings declared");
+
 										return API.Q.resolve({
 											paths: {},
 											aliases: {}
 										});
 									}
+
+									log("Ensure mappings");
+
 									return ensureMappings(
 										map.mappings,
 										sourcePaths,
@@ -829,7 +843,14 @@ console.log("unresolved", name, "for", plugin);
 								return onlyIfMappingsDeclared().then(function (mappingsInfo) {
 
 									function onlyIfBinariesDeclared () {
-										if (!locations.binaries) return API.Q.resolve();
+										if (!locations.binaries) {
+
+											log("No binaries declared");
+
+											return API.Q.resolve();
+										}
+
+										log("Link dependencies");
 
 										return linkSourceDependencies(
 											sourcePaths,
@@ -842,6 +863,8 @@ console.log("unresolved", name, "for", plugin);
 
 									return onlyIfBinariesDeclared().then(function () {
 
+										log("Ensure installed");
+
 										return ensureInstalled(
 											map.sources,
 											sourcePaths,
@@ -851,12 +874,16 @@ console.log("unresolved", name, "for", plugin);
 									});
 								}).then(function () {
 
+									log("Link for registries");
+
 									return linkForRegistries(
 										sourcePaths,
 										locations.registries
 									);
 
 								}).then(function () {
+
+									log("Ensure ignore rules");
 
 									return ensureIgnoreRules(
 										sourcePaths,
