@@ -124,7 +124,12 @@ exports.for = function (API) {
 
 				function isSourceEnsured (registryPath) {
 
+					log("Is source ensured - registryPath: " + registryPath);
+
 					function isLinkedToRegistry () {
+
+						log("isLinkedToRegistry - targetPath: " + targetPath);
+
 						return API.QFS.exists(targetPath).then(function (exists) {
 							if (!exists) return false;
 							return API.QFS.isSymbolicLink(targetPath).then(function (isLink) {
@@ -137,6 +142,10 @@ exports.for = function (API) {
 					}
 
 					function linkToRegistry () {
+
+						log("linkToRegistry - targetPath: " + targetPath);
+						log("linkToRegistry - registryPath: " + registryPath);
+
 						try {
 							API.FS.removeSync(targetPath);
 						} catch (err) {}
