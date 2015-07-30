@@ -25,6 +25,28 @@ exports.for = function (API) {
 		console.log.call(console, "[sm.expand]", formatLogArgs(args));
 	}
 
+	var throttle_waiting = [];
+	var throttle_running = 0;
+	function throttle(callback, runner) {
+		throttle_waiting.push([callback, runner]);
+		if (throttle_waiting.length === 1) {
+			(function iterate() {
+				if (throttle_waiting.length === 0) return;
+				if (throttle_running > 5) {
+					//console.log("Waiting before starting additional code path.");
+					return;
+				}
+				throttle_running += 1;
+				var task = throttle_waiting.shift();
+				return task[1](function() {
+					throttle_running -= 1;
+					iterate();
+					return callback.apply(null, Array.prototype.slice.call(arguments, 0));
+				});
+			})();
+		}
+	}
+
 	function findPackageRoot (path) {
 		path = path.replace(/\/package\.json$/, "");
 		return API.QFS.exists(
@@ -96,185 +118,193 @@ exports.for = function (API) {
 		return API.Q.all(Object.keys(sources).map(function (uid) {
 			return API.Q.all(Object.keys(sources[uid]).map(function (rev) {
 
-				var targetPath = targetPathPattern
-					.replace(/\{uid\}/g, uid)
-					.replace(/\{rev\}/g, rev);
+				return API.Q.denodeify(function (callback) {
 
-				paths[uid + "/" + rev] = targetPath;
+					return throttle(callback, function(callback) {
 
-				function isSourceInRegistry () {
-					return API.Q.fcall(function () {
-						if (
-							sharedSources[uid] &&
-							sharedSources[uid][rev] &&
-							sharedSources[uid][rev].realpath !== targetPath
-						) {
-							return sharedSources[uid][rev].path;
-						}
-						return false;
-					});
-				}
+						var targetPath = targetPathPattern
+							.replace(/\{uid\}/g, uid)
+							.replace(/\{rev\}/g, rev);
 
-				function markSourceEnsured () {
-					return API.QFS.write(
-						API.PATH.join(targetPath, ".sm.expand.ensured"),
-						""
-					);
-				}
+						paths[uid + "/" + rev] = targetPath;
 
-				function isSourceEnsured (registryPath) {
-
-					function isLinkedToRegistry () {
-						return API.QFS.exists(targetPath).then(function (exists) {
-							if (!exists) return false;
-							return API.QFS.isSymbolicLink(targetPath).then(function (isLink) {
-								if (!isLink) return false;
-								return API.QFS.readLink(targetPath).then(function (sourcePath) {
-									return (sourcePath === registryPath);
-								});
-							});
-						});
-					}
-
-					function linkToRegistry () {
-						try {
-							API.FS.removeSync(targetPath);
-						} catch (err) {}
-
-						if (!API.FS.existsSync(API.PATH.dirname(targetPath))) {
-							API.FS.mkdirsSync(API.PATH.dirname(targetPath));
-						}
-
-						log("Linking to registry", registryPath, "to", targetPath);
-						return API.QFS.symbolicLink(targetPath, registryPath, "directory");
-					}
-
-					if (registryPath) {
-						return isLinkedToRegistry().then(function (isLinked) {
-							if (isLinked) return;
-							return linkToRegistry();
-						}).then(function () {
-							return true;
-						});
-					}
-
-					return API.QFS.exists(API.PATH.join(targetPath, ".git")).then(function (exists) {
-
-						if (!exists) {
-							return API.QFS.exists(API.PATH.join(targetPath, ".sm.expand.ensured"));
-						}
-
-						// Ensure the commit that is requested is in the history of our current branch.
-						// TODO: Move this into 'smi-for-git' plugin.
-						function getCommitFromUri (uri) {
+						function isSourceInRegistry () {
 							return API.Q.fcall(function () {
-								var m = uri.match(/^git:\/\/(git@github\.com:[^\/]+\/.+?\.git)(#([^\()]*))?(\(([^\)]+)\))?$/);
-								if (!m) {
-									throw new Error("Cloud not parse uri '" + uri + "'");
+								if (
+									sharedSources[uid] &&
+									sharedSources[uid][rev] &&
+									sharedSources[uid][rev].realpath !== targetPath
+								) {
+									return sharedSources[uid][rev].path;
 								}
-								if (!m[3]) {
-									// TODO: Optionally throw if we require a commit.
-									// throw new Error("Uri '" + uri + "' must specify a commit!");
-									return null;
-								}
-								return m[3];
+								return false;
 							});
 						}
-						function isCommitInAncestors (basePath, commit) {
-							return API.Q.denodeify(function (callback) {
-								return API.EXEC(
-									"git rev-list --boundary HEAD --not " + commit,
-									{
-										cwd: basePath
-									},
-									function (err) {
-										if (err) return callback(null, false);
-										return callback(null, true);
-									}
-								);
-							})();
+
+						function markSourceEnsured () {
+							return API.QFS.write(
+								API.PATH.join(targetPath, ".sm.expand.ensured"),
+								""
+							);
 						}
 
-						function ensured () {
-							// NOTE: To force a rev-check next time remove this file before calling sm.expand
-							return markSourceEnsured().then(function () {
-								return true;
-							});								
-						}
+						function isSourceEnsured (registryPath) {
 
-						return getCommitFromUri(sources[uid][rev].uri).then(function (commit) {
-
-							if (!commit) {
-								return ensured();
+							function isLinkedToRegistry () {
+								return API.QFS.exists(targetPath).then(function (exists) {
+									if (!exists) return false;
+									return API.QFS.isSymbolicLink(targetPath).then(function (isLink) {
+										if (!isLink) return false;
+										return API.QFS.readLink(targetPath).then(function (sourcePath) {
+											return (sourcePath === registryPath);
+										});
+									});
+								});
 							}
 
-							return isCommitInAncestors(targetPath, commit).then(function (found) {
+							function linkToRegistry () {
+								try {
+									API.FS.removeSync(targetPath);
+								} catch (err) {}
 
-								if (!found) {
-									throw new Error("Requested commit '" + commit + "' not found in ancestors. You need to switch to the right branch or delete the reporitory to have it download needed commits.");
+								if (!API.FS.existsSync(API.PATH.dirname(targetPath))) {
+									API.FS.mkdirsSync(API.PATH.dirname(targetPath));
 								}
 
-								return ensured();
-							});
-						});
-					});
-				}
+								log("Linking to registry", registryPath, "to", targetPath);
+								return API.QFS.symbolicLink(targetPath, registryPath, "directory");
+							}
 
-				function ensureEmpty () {
-					return API.QFS.exists(API.PATH.dirname(targetPath)).then(function (exists) {
-						if (!exists) return;
-						return API.Q.denodeify(function (callback) {
-							return API.EXEC("rm -Rf " + API.PATH.basename(targetPath) + "/", {
-								cwd: API.PATH.dirname(targetPath)
-							}, function (err) {
-								if (err) return callback(err);
-								return callback(null);
-							});
-						})();
-					});
-				}
+							if (registryPath) {
+								return isLinkedToRegistry().then(function (isLinked) {
+									if (isLinked) return;
+									return linkToRegistry();
+								}).then(function () {
+									return true;
+								});
+							}
 
-				function ensureBase () {
-					return API.QFS.exists(API.PATH.dirname(targetPath)).then(function (exists) {
-						if (exists) return;
-						return API.Q.nbind(API.FS.mkdirs, API.FS)(API.PATH.dirname(targetPath));
-					});
-				}
+							return API.QFS.exists(API.PATH.join(targetPath, ".git")).then(function (exists) {
 
-				return isSourceInRegistry().then(function (registryPath) {
+								if (!exists) {
+									return API.QFS.exists(API.PATH.join(targetPath, ".sm.expand.ensured"));
+								}
 
-					return isSourceEnsured(registryPath).then(function (ensured) {
-						if (ensured) {
-							log(uid, rev, "already sourced");
-							return;
-						}
-						log("Ensuring source for", uid, rev);
-						return ensureEmpty().then(function () {
-							return ensureBase().then(function () {
-
-								return API.GIT_CLONE(
-									sources[uid][rev].uri,
-									targetPath
-								).then(function () {
-
-									return markSourceEnsured().then(function () {
-
-										log("Source ensured for", uid, rev);
-
+								// Ensure the commit that is requested is in the history of our current branch.
+								// TODO: Move this into 'smi-for-git' plugin.
+								function getCommitFromUri (uri) {
+									return API.Q.fcall(function () {
+										var m = uri.match(/^git:\/\/(git@github\.com:[^\/]+\/.+?\.git)(#([^\()]*))?(\(([^\)]+)\))?$/);
+										if (!m) {
+											throw new Error("Cloud not parse uri '" + uri + "'");
+										}
+										if (!m[3]) {
+											// TODO: Optionally throw if we require a commit.
+											// throw new Error("Uri '" + uri + "' must specify a commit!");
+											return null;
+										}
+										return m[3];
 									});
+								}
+								function isCommitInAncestors (basePath, commit) {
+									return API.Q.denodeify(function (callback) {
+										return API.EXEC(
+											"git rev-list --boundary HEAD --not " + commit,
+											{
+												cwd: basePath
+											},
+											function (err) {
+												if (err) return callback(null, false);
+												return callback(null, true);
+											}
+										);
+									})();
+								}
 
-								}, function (err) {
-									return archiveFailed(targetPath).then(function () {
-										throw err;
-									}, function (e) {
-										console.error("Error archiving failed but ignoring", e.stack);
-										throw err;
+								function ensured () {
+									// NOTE: To force a rev-check next time remove this file before calling sm.expand
+									return markSourceEnsured().then(function () {
+										return true;
+									});								
+								}
+
+								return getCommitFromUri(sources[uid][rev].uri).then(function (commit) {
+
+									if (!commit) {
+										return ensured();
+									}
+
+									return isCommitInAncestors(targetPath, commit).then(function (found) {
+
+										if (!found) {
+											throw new Error("Requested commit '" + commit + "' not found in ancestors. You need to switch to the right branch or delete the reporitory to have it download needed commits.");
+										}
+
+										return ensured();
 									});
 								});
 							});
-						});
+						}
+
+						function ensureEmpty () {
+							return API.QFS.exists(API.PATH.dirname(targetPath)).then(function (exists) {
+								if (!exists) return;
+								return API.Q.denodeify(function (callback) {
+									return API.EXEC("rm -Rf " + API.PATH.basename(targetPath) + "/", {
+										cwd: API.PATH.dirname(targetPath)
+									}, function (err) {
+										if (err) return callback(err);
+										return callback(null);
+									});
+								})();
+							});
+						}
+
+						function ensureBase () {
+							return API.QFS.exists(API.PATH.dirname(targetPath)).then(function (exists) {
+								if (exists) return;
+								return API.Q.nbind(API.FS.mkdirs, API.FS)(API.PATH.dirname(targetPath));
+							});
+						}
+
+						return isSourceInRegistry().then(function (registryPath) {
+
+							return isSourceEnsured(registryPath).then(function (ensured) {
+								if (ensured) {
+									log(uid, rev, "already sourced");
+									return;
+								}
+								log("Ensuring source for", uid, rev);
+								return ensureEmpty().then(function () {
+									return ensureBase().then(function () {
+
+										return API.GIT_CLONE(
+											sources[uid][rev].uri,
+											targetPath
+										).then(function () {
+
+											return markSourceEnsured().then(function () {
+
+												log("Source ensured for", uid, rev);
+
+											});
+
+										}, function (err) {
+											return archiveFailed(targetPath).then(function () {
+												throw err;
+											}, function (e) {
+												console.error("Error archiving failed but ignoring", e.stack);
+												throw err;
+											});
+										});
+									});
+								});
+							});
+						}).then(function () {
+							return callback(null);
+						}).fail(callback);
 					});
-				});
+				})();					
 			}));
 		})).then(function () {
 			return paths;
@@ -630,10 +660,21 @@ console.log("unresolved", name, "for", plugin);
 					var idParts = id.split("/");
 					var installer = sources[idParts[0]][idParts[1]].installer;
 					if (installer) {
-						return installUsing(
-							sourcePaths[id],
-							installer
-						);
+
+						return API.Q.denodeify(function (callback) {
+
+							return throttle(callback, function(callback) {
+
+								return installUsing(
+									sourcePaths[id],
+									installer
+								).then(function () {
+									return callback();
+								}).fail(callback);
+
+							});
+						})();
+
 					} else {
 						// No installer declared so we don't do anything here.
 						log("WARNING: Skip install. No installer set for:", id);						
