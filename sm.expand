@@ -725,7 +725,7 @@ console.log("unresolved", name, "for", plugin);
 
 	exports.for = function (module) {
 
-		log("CODEBASE", __dirname);
+		log("CODEBASE", __dirname, require("./package.json").version);
 		log("Using BO_GLOBAL_SYSTEM_CACHE_DIR:", API.env.BO_GLOBAL_SYSTEM_CACHE_DIR);
 
 		var origin = API.env.CWD;
