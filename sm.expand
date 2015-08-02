@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 
-
 exports.for = function (API) {
 
 	var exports = {};
@@ -90,7 +89,17 @@ exports.for = function (API) {
 		});
 	}
 
-	function ensureSources (sources, targetPathPattern, sharedSources) {
+	function ensureSources (sources, targetPathPattern, sharedSources, mappings) {
+
+		function aliasesForSource (uid, rev) {
+			var aliases = [];
+			for (var mappingAlias in mappings) {
+				if (mappings[mappingAlias] === uid + "/" + rev) {
+					aliases.push(mappingAlias);
+				}
+			}
+			return aliases;
+		}
 
 		var paths = {};
 		return API.Q.all(Object.keys(sources).map(function (uid) {
@@ -99,6 +108,16 @@ exports.for = function (API) {
 				var targetPath = targetPathPattern
 					.replace(/\{uid\}/g, uid)
 					.replace(/\{rev\}/g, rev);
+
+				if (/\{alias\}/.test(targetPath)) {
+					var aliases = aliasesForSource(uid, rev);
+					if (aliases.length > 1) {
+						throw new Error("Cannot install source by alias. Found more than one alias '" + aliases.join(",") + "' for source id '" + uid + "/" + rev + "'.");
+					}
+					if (aliases.length === 1) {
+						targetPath = targetPath.replace(/\{alias\}/g, aliases[0]);
+					}
+				}
 
 				paths[uid + "/" + rev] = targetPath;
 
@@ -356,7 +375,8 @@ exports.for = function (API) {
 					API.FS.mkdirsSync(API.PATH.dirname(targetPath));
 				}
 
-				if (settings.relativeMappings) {
+				// @schema settings "@github.com~sourcemint~sm.expand~0/settings"
+				if (settings.useRelativeMappings) {
 					return API.QFS.symbolicLink(targetPath, API.PATH.relative(API.PATH.dirname(targetPath), sourcePath), "directory");
 				} else {
 					return API.QFS.symbolicLink(targetPath, sourcePath, "directory");
@@ -789,7 +809,8 @@ console.log("unresolved", name, "for", plugin);
 							return ensureSources(
 								map.sources,
 								API.PATH.join(origin, locations.sources),
-								sharedSources
+								sharedSources,
+								map.mappings
 							).then(function (sourcePaths) {
 
 								function onlyIfMappingsDeclared () {
