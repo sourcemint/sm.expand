@@ -283,7 +283,7 @@ exports.for = function (API) {
 		});
 	}
 
-	function ensureMappings (mappings, sourcePaths, targetPathPattern) {
+	function ensureMappings (mappings, sourcePaths, targetPathPattern, settings) {
 		var paths = {};
 		var aliases = {};
 		return API.Q.all(Object.keys(mappings).map(function (alias) {
@@ -356,7 +356,11 @@ exports.for = function (API) {
 					API.FS.mkdirsSync(API.PATH.dirname(targetPath));
 				}
 
-				return API.QFS.symbolicLink(targetPath, sourcePath, "directory");
+				if (settings.relativeMappings) {
+					return API.QFS.symbolicLink(targetPath, API.PATH.relative(API.PATH.dirname(targetPath), sourcePath), "directory");
+				} else {
+					return API.QFS.symbolicLink(targetPath, sourcePath, "directory");
+				}
 			}
 
 			return alreadyExists().then(function (exists) {
@@ -765,6 +769,8 @@ console.log("unresolved", name, "for", plugin);
 							return;
 						}
 
+						var settings = map.at("github.com~sourcemint~sm.expand~0/settings") || {};
+
 						var locations = map.at("github.com~sourcemint~sm.expand~0/locations");
 
 						if (locations.binaries) {
@@ -796,7 +802,8 @@ console.log("unresolved", name, "for", plugin);
 									return ensureMappings(
 										map.mappings,
 										sourcePaths,
-										API.PATH.join(origin, locations.mappings)
+										API.PATH.join(origin, locations.mappings),
+										settings
 									);
 								}
 
